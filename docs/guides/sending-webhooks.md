@@ -7,7 +7,7 @@ Kirim satu objek JSON ke `POST /api/v1/webhooks/{slug}` dengan `Content-Type: ap
 | ID baru dan request valid | `202` setelah MySQL menyimpan execution |
 | ID dan byte body sama | `202` dengan execution ID yang sama |
 | ID sama, byte body berbeda | `409 EVENT_ID_CONFLICT` |
-| Event baru dan kapasitas penuh | `429 FLOW_CAPACITY_EXCEEDED` atau `503 SYSTEM_BACKPRESSURE` dengan `Retry-After` |
+| Event baru dan kapasitas penuh | `429 FLOW_CAPACITY_EXCEEDED` dengan `Retry-After: 5` |
 
 Jika respons hilang, kirim ulang ID dan byte body yang sama. Perubahan whitespace juga mengubah byte body. Gunakan ID baru untuk event logis baru.
 

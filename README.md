@@ -52,7 +52,8 @@ Mulai dari [indeks dokumentasi](docs/README.md) untuk melihat panduan integrasi,
 | Memahami flow, execution, retry, dan DLQ | [Pelacakan execution](docs/guides/tracking-executions.md) |
 | Menulis konfigurasi YAML | [Konfigurasi flow](docs/guides/flow-configuration.md) |
 | Endpoint dan format request/response | [Referensi API](docs/reference/api.md) |
-| Struktur code, database dan layer | [System Design](SYSTEM_DESIGN.md) |
+| Struktur code, database dan layer | [System Design](SYSTEM_DESIGN.md) dan [Skema database](docs/reference/database.md) |
+| Menyiapkan lingkungan pengembangan (termasuk Windows) | [Panduan pengembangan](docs/getting-started/development.md) |
 | Masalah umum dan solusinya | [Pemecahan masalah](docs/operations/troubleshooting.md) |
 | Tahapan implementasi & batasan MVP | [Roadmap](ROADMAP.md) |
 | Menyiapkan pekerjaan agent implementasi | [Paket kerja agent](docs/ai/implementation-plan.md) dan [AGENTS.md](AGENTS.md) |
@@ -71,6 +72,7 @@ Mulai dari [indeks dokumentasi](docs/README.md) untuk melihat panduan integrasi,
 - **At-least-once delivery**: request ke target dapat dikirim ulang. Gunakan `X-Event-ID` inbound dan dukungan idempotency dari target jika tersedia.
 - `202 Accepted` berarti **berhasil disimpan**, belum tentu sudah terkirim ke target.
 - Flow hanya step berurutan; belum ada percabangan/loop.
+- Header autentikasi ke target didukung lewat `headers` dengan placeholder `${ALURJET_FLOW_*}`. Nilainya dibaca dari environment worker saat dispatch dan tidak disimpan di database.
 - Jangan gunakan untuk payload sensitif/production sebelum security, backup, dan load tests selesai.
 
 ## Kontribusi dan lisensi

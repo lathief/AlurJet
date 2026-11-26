@@ -8,6 +8,17 @@
 - Catat baseline p95 waktu hingga claim, throughput, penggunaan database, dan waktu pemulihan pada profil beban yang bisa diulang. Tetapkan target sesuai beban dan verifikasi lagi setelah perubahan.
 - Temuan keamanan, kehilangan execution, atau perubahan snapshot yang tidak semestinya masuk kembali ke backlog MVP. Catat bukti, batas uji, dan blocker di [worklog](ai/worklog.md).
 
+## Ditunda dari MVP
+
+Kedua butir ini bagian dari blueprint awal dan dipindahkan oleh [ADR-002](ai/decisions.md) untuk menjaga jadwal v0.1.0.
+
+| Kandidat | Ambil saat | Kriteria selesai |
+|---|---|---|
+| Ambang global antrean (`ALURJET_ACTIVE_HIGH_WATERMARK`) dengan `503 SYSTEM_BACKPRESSURE` | Banyak flow aktif sekaligus dan kuota per flow tidak cukup melindungi database | Insert baru ditolak dengan `503` dan `Retry-After` saat ambang tercapai. Dedup yang sudah commit tetap `202`. Query plan dan lock wait diukur sebelum menambah counter |
+| Anggaran byte per step `transform` | Flow dengan banyak step transform membesarkan data antara | Setiap step menolak output di atas batas sebelum menyalin fragmen. Uji field berulang, UTF-8/escaping, dan step yang mengecilkan objek |
+| Rate limit autentikasi gagal, HMAC atau timestamp webhook | Endpoint terbuka ke jaringan publik tanpa reverse proxy | Percobaan token salah dibatasi dan replay request lama ditolak berdasarkan tanda tangan |
+| Retensi dan masa dedup (lihat P1 di bawah) | Storage mulai membesar | Lihat kandidat retensi |
+
 ## P1 — Operasional dan pengendalian data
 
 | Urutan | Kandidat | Ambil saat | Kriteria selesai |

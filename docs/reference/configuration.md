@@ -19,13 +19,22 @@ Tabel ini mengikuti nilai contoh di [.env.example](../../.env.example). Nilai co
 | `ALURJET_WORKER_ATTEMPT_TIMEOUT` | `15s` | Anggaran waktu satu attempt |
 | `ALURJET_WORKER_LEASE_DURATION` | `60s` | Durasi lease execution |
 | `ALURJET_MAX_PAYLOAD_BYTES` | `1048576` | Batas ukuran body payload masuk |
-| `ALURJET_MAX_OUTBOUND_BYTES` | `1048576` | Batas byte output setiap transform dan body final. Harus positif |
+| `ALURJET_MAX_OUTBOUND_BYTES` | `1048576` | Batas byte body JSON final sebelum DNS dan koneksi outbound. Harus positif |
 | `ALURJET_MAX_RESPONSE_HEADER_BYTES` | `65536` | Batas byte header respons HTTP target |
 | `ALURJET_MAX_ACTIVE_PER_FLOW` | `250` | Kuota per flow untuk pending, running, dan retry_scheduled |
-| `ALURJET_ACTIVE_HIGH_WATERMARK` | `2000` | Ambang operasional global untuk submit dan replay baru |
+| `ALURJET_MAX_FLOW_YAML_BYTES` | `65536` | Batas ukuran body YAML pada create/update flow |
+| `ALURJET_WORKER_CONCURRENCY` | `4` | Jumlah attempt paralel per proses worker |
+| `ALURJET_WORKER_RECOVERY_INTERVAL` | `15s` | Jeda antar pemindaian lease kedaluwarsa |
+| `ALURJET_WORKER_RECOVERY_BATCH` | `50` | Jumlah maksimum execution yang dipulihkan per pemindaian |
+| `ALURJET_MYSQL_MAX_OPEN_CONNS` | `20` | Batas koneksi terbuka ke MySQL per proses |
+| `ALURJET_SHUTDOWN_TIMEOUT` | `20s` | Waktu tunggu attempt dan request berjalan saat SIGTERM |
+| `ALURJET_MOCK_PORT` | `8081` | Port mock receiver di jaringan Compose |
+| `ALURJET_FLOW_*` (mis. `ALURJET_FLOW_TARGET_TOKEN`) | Placeholder | Variabel yang dirujuk flow. Dipakai untuk URL (saat import) dan `headers` (saat dispatch). API dan worker harus menerima nilai yang sama |
 | `ALURJET_LOG_LEVEL` | `info` | Level log aplikasi |
 
-Batas kapasitas dan header respons harus positif. Nilai kapasitas di atas adalah titik awal demo. Anggaran attempt harus positif dan lebih pendek dari durasi lease. Konfigurasi timeout HTTP pada flow dibatasi oleh anggaran attempt. Jika variabel URL berubah, impor ulang atau perbarui flow untuk menerapkannya ke event baru. Snapshot lama tetap memakai URL yang sudah tersimpan.
+Batas ukuran dan kapasitas harus positif. Nilai kapasitas di atas adalah titik awal demo. `ALURJET_ADMIN_API_KEY` dan setiap token webhook harus acak dan minimal 32 karakter, dan startup gagal bila tidak terpenuhi. Anggaran attempt harus positif dan lebih pendek dari durasi lease. Ambang global antrean (`ALURJET_ACTIVE_HIGH_WATERMARK`) ditunda ke [backlog pasca-MVP](../post-mvp.md).
+
+Semua variabel dibaca saat startup. Perubahan nilai, termasuk rotasi token dan `ALURJET_FLOW_*`, memerlukan restart proses. Konfigurasi timeout HTTP pada flow dibatasi oleh anggaran attempt. Jika variabel URL berubah, impor ulang atau perbarui flow untuk menerapkannya ke event baru. Snapshot lama tetap memakai URL yang sudah tersimpan.
 
 Lihat [konfigurasi YAML](../guides/flow-configuration.md), [keamanan](../operations/security.md), dan [deployment](../operations/deployment.md).
 

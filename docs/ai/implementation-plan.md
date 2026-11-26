@@ -1,30 +1,80 @@
 # Paket kerja awal AlurJet
 
-> Status semua kartu: **direncanakan**. Cakupan lengkap setiap milestone tetap ada di [roadmap](../../ROADMAP.md).
+> Cakupan lengkap setiap milestone ada di [roadmap](../../ROADMAP.md). Cakupan MVP mengikuti paket hemat di [ADR-002](decisions.md).
 
-Ambil satu kartu pada satu waktu. Cocokkan implementasi dengan [desain sistem](../../SYSTEM_DESIGN.md) dan [matriks verifikasi](verification.md). Catat hasil serta tugas berikutnya di [worklog](worklog.md).
+Ambil satu kartu pada satu waktu. Cocokkan implementasi dengan [desain sistem](../../SYSTEM_DESIGN.md) dan [matriks verifikasi](verification.md). Catat hasil serta tugas berikutnya di [worklog](worklog.md) dan perbarui kolom status di bawah.
 
-## ALJ-01 — Fondasi API dan lingkungan demo
+## Status kartu
 
-- **Prasyarat:** Go, MySQL, dan Docker Compose untuk jalur lokal yang dipilih.
-- **Cakupan:** modul Go, bootstrap Fiber dengan wiring manual, konfigurasi, log JSON, `GET /healthz`, dan bootstrap Compose M0 dengan satu sumber konfigurasi MySQL serta service `migrate`. Siapkan mock receiver `POST /orders` dengan mode di roadmap.
-- **Selesai ketika:** build/unit test lulus, API bisa diakses setelah startup lokal, milestone lulus dari volume kosong dan startup ulang; migrasi gagal menahan API/worker dan terlihat di status/log; mock memiliki perilaku `success`, `fail_once` per key, serta `always_fail` yang teruji.
-- **Tugas terpisah:** import flow, ingest, dan worker.
+| Kartu | Milestone | Judul | Status |
+|---|---|---|---|
+| ALJ-00 | Pra-M0 | Penutupan celah dokumen | Selesai. DDL terverifikasi pada MySQL 8.4.13 (lihat [worklog](worklog.md)) |
+| ALJ-01 | M0 | Fondasi Go, konfigurasi, dan `/healthz` | Direncanakan |
+| ALJ-02 | M0 | Migrasi, Compose, dan mock receiver | Direncanakan |
+| ALJ-03 | M1 | Parser DSL dan engine `validate`/`transform` | Direncanakan |
+| ALJ-04 | M1 | Manajemen flow (create, list, detail, update) | Direncanakan |
+| ALJ-05 | M2 | Ingest webhook, dedup, dan kuota | Direncanakan |
+| ALJ-06 | M2 | Konektor HTTP outbound dan kebijakan jaringan | Direncanakan |
+| ALJ-07 | M2 | Worker: claim, finalisasi, dan retry | Direncanakan |
+| ALJ-08 | M2 | Recovery lease dan gate M2 | Direncanakan |
 
-## ALJ-02 — Import dan simpan satu flow YAML
+Status yang valid: `Direncanakan`, `Dikerjakan`, `Selesai`, `Diblokir`. Ubah menjadi `Selesai` hanya setelah verifikasi kartu terkait tercatat di worklog.
+
+## ALJ-00 — Penutupan celah dokumen
+
+- **Cakupan:** skema database ([database.md](../reference/database.md)), katalog error dan kontrak API ([errors.md](../reference/errors.md), [api.md](../reference/api.md)), spesifikasi DSL termasuk `headers`, konfigurasi runtime, konvensi di [AGENTS.md](../../AGENTS.md), [panduan pengembangan](../getting-started/development.md), dan ADR-002 sampai ADR-005.
+- **Selesai ketika:** `SYSTEM_DESIGN.md`, `ROADMAP.md`, `.env.example`, dan referensi tidak saling bertentangan. DDL berjalan pada MySQL 8.4 sekali pakai dan perbandingan `event_id` terbukti case-sensitive.
+
+## ALJ-01 — Fondasi Go, konfigurasi, dan `/healthz`
+
+- **Prasyarat:** ALJ-00, Go 1.23+.
+- **Cakupan:** modul Go, `cmd/alurjet` dengan subcommand `api` dan `worker`, `internal/config` dengan validasi startup (nilai positif, `0 < attempt_timeout < lease`, secret minimal 32 karakter, token unik, admin key berbeda dari token webhook), `slog` JSON, Fiber v2 dengan error envelope, `GET /healthz` yang memeriksa DB, manual DI, dan graceful shutdown. Tambahkan `Makefile` dan `.golangci.yml`.
+- **Selesai ketika:** `gofmt`, `golangci-lint`, dan `go test ./...` lulus. Konfigurasi tidak valid keluar nonnol tanpa mencetak nilai rahasia. Ada satu contoh unit test usecase.
+- **Tugas terpisah:** migrasi, Compose, import flow, ingest, dan worker.
+
+## ALJ-02 — Migrasi, Compose, dan mock receiver
 
 - **Prasyarat:** ALJ-01.
-- **Cakupan:** parser DSL, resolusi URL saat import, penyimpanan YAML dan definisi terkompilasi, serta `POST /api/v1/flows` dengan auth admin. Gunakan [fixture YAML kanonis](../examples/order-to-api.yaml) dan ikuti desain §§4, 6–8.
-- **Selesai ketika:** fixture lolos dengan satu HTTP POST di step terakhir; konfigurasi invalid atau dua step HTTP menghasilkan `422`; slug duplikat menghasilkan `409`; token yang keliru menghasilkan `401`; definisi terkompilasi menyimpan URL teresolusi.
-- **Tugas berikutnya dalam M1:** tuntaskan list, detail, dan update serta unit test step validasi/transformasi yang diwajibkan roadmap sebelum M1 ditutup.
+- **Cakupan:** `migrations/` dari [database.md](../reference/database.md), `Dockerfile`, `docker-compose.yml` (MySQL dengan healthcheck, `migrate` sekali jalan, `api`, `worker`, `mock-api`), `docker-compose.test.yml`, dan mock `POST /orders` dengan mode `success`, `fail_once` (per outbound key), `always_fail`, serta `GET /_received` yang hanya dipublikasikan ke loopback.
+- **Selesai ketika:** startup dari volume kosong berhasil, startup ulang membuat migrasi no-op, migrasi yang dirusak pada project terisolasi menahan API/worker dan terlihat di status/log tanpa mencetak password, dan tiga mode mock teruji.
 
-## ALJ-03 — Demo webhook sampai mock target
+## ALJ-03 — Parser DSL dan engine `validate`/`transform`
 
-- **Prasyarat:** ALJ-02 dan gate M1 pada roadmap.
-- **Cakupan:** kerjakan ingest, dedup, dan kapasitas MySQL lebih dulu, lalu claim/finalisasi, recovery lease minimum, runner dan HTTP connector. Scope token ke slug, batasi output tiap step dan header respons target, lalu tutup body tanpa membacanya. Finalisasi M2 mencakup klasifikasi hasil, backoff, dan penulisan jadwal retry secara atomik. Gunakan [event pesanan](../examples/order-event.json) dan target mock lokal. Ikuti desain §§4–8.
-- **Selesai ketika:** setelah `202`, worker bisa claim execution pada polling berikutnya; request identik mengembalikan ID yang sama; ID sama dengan byte body berbeda menghasilkan `409`; JSON dengan nama field berulang menghasilkan `400` tanpa insert; mock menerima hasil pemetaan termasuk angka `9007199254740993` tanpa perubahan; claim ganda dan finalisasi setelah expiry ditolak; respons `500` dengan jatah tersisa menutup attempt dan menyimpan `retry_scheduled` beserta `available_at` di masa depan; `400` dari fixture HTTP khusus tes integrasi menjadi `dead_letter`; ukuran JSON di atas batas juga menjadi `dead_letter` tanpa koneksi ke target.
-- **Tugas terpisah:** verifikasi retry berulang, exhaustion, recovery serentak, history endpoint, dan replay di M3. Periksa hasil demo M2 dari mock dan database/tes integrasi sampai endpoint pemeriksaan hasil tersedia.
+- **Prasyarat:** ALJ-01.
+- **Cakupan:** parser YAML strict (`KnownFields(true)`, tolak anchor/alias, batas ukuran), validasi aturan [flow-configuration.md](../guides/flow-configuration.md), resolusi URL dan validasi template `headers`, serialisasi definisi terkompilasi, serta runner `validate` dan `transform` yang mempertahankan token angka.
+- **Selesai ketika:** fixture [order-to-api.yaml](../examples/order-to-api.yaml) dan [order-to-api-auth.yaml](../examples/order-to-api-auth.yaml) terkompilasi. Kasus tidak valid (dua step HTTP, ID duplikat, placeholder tidak didukung, header terlarang, 65 field, field tak dikenal, alias) ditolak. `9007199254740993` dan `0.123456789012345678901` keluar identik dari transform.
 
-## Setelah tiga kartu awal
+## ALJ-04 — Manajemen flow
 
-Pecah M3 menjadi verifikasi retry berulang, uji concurrency recovery M2, serta history dan replay. Tuntaskan dokumentasi dan demo yang dapat diulang di M4. Perubahan di luar v0.1.0 ada di [backlog setelah MVP](../post-mvp.md).
+- **Prasyarat:** ALJ-02 dan ALJ-03.
+- **Cakupan:** repository, usecase, dan controller untuk `POST/GET/PUT /api/v1/flows` dengan auth admin, sesuai [api.md](../reference/api.md).
+- **Selesai ketika:** fixture lolos dengan `201`. Konfigurasi tidak valid atau dua step HTTP menghasilkan `422`. Slug duplikat menghasilkan `409`. Token keliru menghasilkan `401`. Definisi terkompilasi menyimpan URL teresolusi dan template header. `PUT` memperbarui flow tanpa mengubah execution yang ada. Gate M1 di roadmap terpenuhi.
+
+## ALJ-05 — Ingest webhook, dedup, dan kuota
+
+- **Prasyarat:** ALJ-04.
+- **Cakupan:** middleware token terikat slug, validasi urutan sesuai [errors.md](../reference/errors.md#urutan-validasi-webhook), detektor nama field berulang, hash dari byte asli, transaksi `READ COMMITTED` dengan lock flow, dedup, kuota `ALURJET_MAX_ACTIVE_PER_FLOW`, dan insert `pending` dengan `available_at` dari MySQL.
+- **Selesai ketika:** request identik mengembalikan ID yang sama. ID sama dengan byte body berbeda menghasilkan `409`. JSON dengan nama field berulang menghasilkan `400` tanpa insert. Kuota penuh menghasilkan `429` sementara dedup tetap `202`. Ingest serentak menghasilkan satu baris. Execution baru dapat diklaim pada polling pertama setelah commit.
+
+## ALJ-06 — Konektor HTTP outbound
+
+- **Prasyarat:** ALJ-03.
+- **Cakupan:** validasi origin, dialer yang memeriksa IP dengan daftar CIDR eksplisit, penolakan redirect dan proxy, batas header respons, body ditutup tanpa dibaca, resolusi `headers` saat dispatch, `Idempotency-Key`, klasifikasi hasil, dan pemeriksaan body final sebelum DNS.
+- **Selesai ketika:** tes dengan resolver dan dialer terkontrol lulus untuk origin ditolak, redirect, DNS campuran, IP koneksi sama dengan IP tervalidasi, pengecualian dev terbatas pada satu origin, header terkirim dan tidak tercatat di log, serta batas byte tepat dan lebih satu byte.
+
+## ALJ-07 — Worker: claim, finalisasi, dan retry
+
+- **Prasyarat:** ALJ-05 dan ALJ-06.
+- **Cakupan:** polling dengan `ALURJET_WORKER_CONCURRENCY`, claim `SKIP LOCKED`, attempt dalam transaksi yang sama, `ProcessExecution`, finalisasi dengan guard status, token, dan expiry, klasifikasi sukses, retryable, dan permanen, serta backoff.
+- **Selesai ketika:** setelah `202`, execution diklaim pada polling berikutnya. Claim ganda dan finalisasi setelah expiry (termasuk `lease_until == db_now`) ditolak. Claim yang gagal di tengah tidak menaikkan `attempts`. `500` dari mock `fail_once` menghasilkan `retry_scheduled` dengan `available_at` masa depan lalu sukses dengan key yang sama. `400` dari fixture khusus tes menjadi `dead_letter`. Body di atas batas menjadi `dead_letter` tanpa koneksi.
+
+## ALJ-08 — Recovery lease dan gate M2
+
+- **Prasyarat:** ALJ-07.
+- **Cakupan:** recovery saat startup dan berkala, mode proses `api` dan `worker`, healthcheck worker, Quickstart M2, dan pembaruan roadmap sesuai bukti.
+- **Selesai ketika:** crash setelah mock menerima POST dan sebelum finalisasi menghasilkan attempt lama ditutup sekali, retry dengan body dan key yang sama, atau `dead_letter` saat jatah habis. Dua recovery serentak menutup attempt sekali. `go test ./... -race` dan tes integrasi lulus. Quickstart bagian 1–3 berjalan dari volume kosong.
+- **Tugas terpisah:** verifikasi retry berulang, history endpoint, dan replay di M3 (lihat bawah).
+
+## Setelah kartu awal
+
+Pecah M3 menjadi verifikasi retry berulang, uji concurrency recovery M2, serta endpoint execution (list, detail) dan replay. Tuntaskan dokumentasi dan demo yang dapat diulang di M4. Perubahan di luar v0.1.0 ada di [backlog setelah MVP](../post-mvp.md).

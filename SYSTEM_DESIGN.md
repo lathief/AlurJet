@@ -2,7 +2,7 @@
 
 > **Target:** proyek portofolio **mid-level backend developer**, bukan ESB enterprise.
 > **Status:** spesifikasi rancangan untuk v0.1.0, belum implementasi.
-> **Updated:** 2026-11-23
+> **Updated:** 2026-11-26
 
 ## 1. Tujuan dan ruang lingkup
 
@@ -16,18 +16,19 @@ MVP menyelesaikan satu kasus nyata: **webhook diterima -> JSON divalidasi -> fie
 
 | Area | Pilihan | Alasan |
 |---|---|---|
-| Backend | Go + Fiber | HTTP API sederhana; framework hanya digunakan di controller |
-| Database | MySQL 8+ (InnoDB) | Menyimpan flow, execution, dan background jobs |
-| DB access | `database/sql` + MySQL driver | Query eksplisit, mudah diuji; `sqlc` opsional |
-| Migration | golang-migrate | Schema dapat di-versioning |
+| Backend | Go 1.23+ dan Fiber v2 | HTTP API sederhana; framework hanya digunakan di controller |
+| Database | MySQL 8.4 LTS (InnoDB) | Menyimpan flow, execution, dan background jobs |
+| DB access | `database/sql` + `go-sql-driver/mysql` | Query eksplisit, mudah diuji; `sqlc` opsional |
+| Migration | golang-migrate v4 | Schema dapat di-versioning |
 | Jobs | Polling MySQL | Tidak membutuhkan Redis/NATS sejak awal |
-| Config | YAML | Mudah dibaca dan dibagikan pengguna |
+| Config | YAML (`gopkg.in/yaml.v3`, `KnownFields(true)`) | Mudah dibaca dan dibagikan pengguna |
 | Docs | Swaggo + Markdown | API contract dan panduan penggunaan |
 | Logging | `log/slog` (JSON) | Korelasi error tanpa stack observability besar |
-| Testing | `go test` + integration test MySQL | Bukti logic dan transaksi benar |
+| Lint | golangci-lint | Format dan analisis statis yang sama di lokal dan CI |
+| Testing | `go test` + integration test MySQL via Compose terpisah | Bukti logic dan transaksi benar |
 | Deploy | Docker Compose | Mudah direproduksi oleh reviewer |
 
-Tetapkan versi dependency di `go.mod` dan dokumentasikan kompatibilitas ketika implementasi. Tidak perlu mengadopsi banyak library sekaligus.
+Versi dependency dipin di `go.mod`. Tidak perlu mengadopsi banyak library sekaligus. Konvensi koding dan alat bantu ada di [AGENTS.md](AGENTS.md) dan [panduan pengembangan](docs/getting-started/development.md).
 
 ## 3. Arsitektur
 
@@ -63,7 +64,8 @@ Gunakan **dependency injection manual** di startup; tidak perlu DI framework ata
 ### Struktur direktori target
 
 ```text
-cmd/alurjet/main.go
+cmd/alurjet/main.go       # subcommand: api, worker
+cmd/mockapi/main.go       # mock receiver untuk demo dan tes
 internal/
   config/
   domain/                 # model, error, repository interfaces
@@ -85,6 +87,9 @@ CONTRIBUTING.md
 .env.example
 Dockerfile
 docker-compose.yml
+docker-compose.test.yml   # MySQL terisolasi untuk tes integrasi
+Makefile
+.golangci.yml
 ```
 
 ## 4. Data model minimal
@@ -94,6 +99,8 @@ docker-compose.yml
 | `flows` | `id`, `slug` (unique), `name`, `definition_yaml`, `compiled_definition_json`, `created_at`, `updated_at` | YAML asli dan definisi aktif yang sudah divalidasi, berisi URL teresolusi dan default |
 | `executions` | `id`, `flow_id`, `event_id` (nullable), `payload_json`, `payload_hash`, `flow_snapshot`, `outbound_idempotency_key`, `replayed_from_id` (nullable, FK ke `executions.id`), `replay_request_key` (nullable), `status`, `attempts`, `available_at` (NOT NULL), `lease_until`, `lease_token`, `last_error`, timestamps | Durable queue, state, dan asal replay |
 | `execution_attempts` | `id`, `execution_id`, `attempt_no`, `lease_token`, `status`, `http_status`, `error_code`, `started_at`, `finished_at` | Riwayat eksekusi dengan status `running`, `succeeded`, `failed`, atau `lease_expired` |
+
+DDL lengkap, tipe kolom, collation, dan ERD ada di [referensi database](docs/reference/database.md). Ringkasnya: `flows.id` `BIGINT` auto-increment, `executions.id` UUID v4 `CHAR(36)`, kolom kunci memakai `ascii_bin` agar perbandingan case-sensitive, dan semua waktu `DATETIME(3)` UTC.
 
 Buat `UNIQUE(flow_id, event_id)`, `UNIQUE(replayed_from_id, replay_request_key)`, dan `UNIQUE(execution_id, attempt_no)`. Simpan event ID dan replay request key dengan perbandingan byte yang case-sensitive. Tambahkan indeks `executions(status, available_at, id)` dan `executions(status, lease_until, id)` untuk worker, serta `executions(flow_id, status)` untuk pemeriksaan kapasitas per flow. Simpan waktu dalam UTC dengan presisi milidetik. MVP tidak memerlukan tabel job, client, atau secret terpisah. Simpan `payload_json` sebagai teks JSON UTF-8 yang sudah divalidasi (misalnya `LONGTEXT`) agar penyimpanan mempertahankan token angka asli. MySQL tidak perlu melakukan query terhadap isi payload.
 
@@ -133,7 +140,8 @@ sequenceDiagram
 - Kebijakan kapasitas dibuat untuk webhook pada M2 dan dipakai ulang untuk replay saat endpoint itu tersedia pada M3. Hitung `pending`, `running`, dan `retry_scheduled` sebagai execution aktif. Status terminal melepas kapasitas untuk pekerjaan baru.
 - Gunakan transaksi MySQL `READ COMMITTED`. Lock row flow, lalu periksa deduplikasi dari hasil yang sudah commit dan baru periksa kapasitas untuk insert baru. Ingest mengambil snapshot dari flow yang dikunci. Replay memakai snapshot dan flow ID sumber. Jika operasi juga perlu mengunci execution, urutannya flow → execution. Claim, recovery, dan finalisasi tetap mengunci execution tanpa mengambil lock flow.
 - `ALURJET_MAX_ACTIVE_PER_FLOW` membatasi execution aktif secara ketat per flow. Setiap insert baru melewati lock flow sehingga webhook dan replay concurrent berbagi kuota yang sama. Pada batas ini, kembalikan `429 FLOW_CAPACITY_EXCEEDED`.
-- `ALURJET_ACTIVE_HIGH_WATERMARK` adalah ambang operasional global. Pada batas itu, hentikan insert baru dengan `503 SYSTEM_BACKPRESSURE`. Insert concurrent pada flow berbeda dapat melewati ambang sementara. Jika kedua batas tercapai, prioritaskan `503`. Gunakan `Retry-After` dalam detik untuk kedua error kapasitas. Mulai dari probe menggunakan indeks dan berhenti setelah batas tercapai. Ukur query plan dan lock wait sebelum menambah counter.
+- Respons `429` memakai `Retry-After: 5` (detik). Hitung execution aktif dengan probe berindeks `executions(flow_id, status)` yang berhenti setelah batas tercapai. Ukur query plan dan lock wait sebelum menambah counter.
+- Ambang global (`ALURJET_ACTIVE_HIGH_WATERMARK`) dan `503 SYSTEM_BACKPRESSURE` ditunda ke [backlog pasca-MVP](docs/post-mvp.md) ([ADR-002](docs/ai/decisions.md)).
 - Deduplikasi yang sudah commit tetap memberi `202` dengan execution ID yang sama meski antrean penuh. Event ID yang sama dengan body berbeda tetap `409 EVENT_ID_CONFLICT`. Request yang ditolak kapasitas dapat diulang dengan key dan body yang sama. API membaca status dan worker memproses execution yang sudah diterima seperti biasa. Uji dua jalur saat target offline.
 
 ### Claim, finalisasi, dan recovery
@@ -156,9 +164,20 @@ WHERE id = ?
 
 ### Batas ukuran JSON keluar
 
-Terapkan `ALURJET_MAX_OUTBOUND_BYTES` pada output setiap `transform` dan body final, termasuk flow tanpa transform. Pada setiap step, bangun objek UTF-8 secara bertahap dalam buffer berbatas. Periksa sisa anggaran sebelum menambahkan key yang telah di-escape, tanda baca, atau fragmen nilai. Referensikan fragmen JSON valid dari input step agar satu nilai yang dipetakan berulang dapat diukur sebelum disalin. Jangan serialisasi seluruh objek ke buffer sementara sebelum pemeriksaan. Pertahankan token angka asli dan gunakan urutan key deterministik. Tepat pada batas diterima. Input tetap tunduk pada `ALURJET_MAX_PAYLOAD_BYTES` dan boleh lebih besar dari batas outbound jika transform pertama mengecilkannya.
+Tiga kontrol membatasi ukuran data ([ADR-002](docs/ai/decisions.md)):
 
-Jika step mana pun melebihi batas, hentikan execution sebelum step berikutnya, resolusi DNS, atau koneksi HTTP. Finalisasi attempt sebagai gagal permanen dengan `OUTBOUND_PAYLOAD_TOO_LARGE` dan execution `dead_letter`. Jangan isi status HTTP target dan jangan jadwalkan ulang. Nilai awal batas adalah 1 MiB, dengan konfigurasi positif yang diperiksa saat startup.
+1. Body masuk dibatasi `ALURJET_MAX_PAYLOAD_BYTES` (awal 1 MiB) pada ingest.
+2. Step `transform` dibatasi 64 field. Dengan batas ini, pembesaran terburuk akibat satu nilai yang dipetakan berulang terbatas dan dapat dihitung.
+3. Body JSON final diperiksa terhadap `ALURJET_MAX_OUTBOUND_BYTES` (awal 1 MiB, harus positif, diperiksa saat startup) sebelum resolusi DNS atau koneksi HTTP, termasuk untuk flow tanpa transform. Tepat pada batas diterima.
+
+Pertahankan token angka asli dan gunakan urutan key deterministik. Jika body final melebihi batas, finalisasi attempt sebagai gagal permanen dengan `OUTBOUND_PAYLOAD_TOO_LARGE` dan execution `dead_letter`. Jangan isi status HTTP target dan jangan jadwalkan ulang. Anggaran byte per step ditunda ke [backlog pasca-MVP](docs/post-mvp.md).
+
+### Operasi proses
+
+- **Health:** `GET /healthz` memeriksa koneksi DB dengan timeout 1 detik dan mengembalikan `200 {"status":"ok"}`. Jika DB tidak dapat dijangkau, kembalikan `503` dengan kode `INTERNAL_ERROR`. Worker tidak membuka port HTTP. Healthcheck Compose worker memakai berkas heartbeat yang diperbarui setiap siklus polling.
+- **Graceful shutdown:** saat SIGTERM atau SIGINT, API berhenti menerima koneksi dan menunggu request berjalan. Worker berhenti mengambil claim baru dan menunggu attempt aktif sampai `ALURJET_SHUTDOWN_TIMEOUT` (awal 20 detik). Attempt yang belum selesai dipulihkan oleh recovery lease.
+- **Multi-instance:** beberapa replika API dan worker didukung karena claim memakai `SKIP LOCKED`. Admin key, peta token webhook, dan variabel `ALURJET_FLOW_*` dibaca saat startup, jadi perubahan memerlukan restart proses.
+- **Konkurensi worker:** `ALURJET_WORKER_CONCURRENCY` (awal 4) menentukan jumlah attempt paralel per proses. Recovery berjalan setiap `ALURJET_WORKER_RECOVERY_INTERVAL` (awal 15 detik) dengan batch `ALURJET_WORKER_RECOVERY_BATCH` (awal 50).
 
 ### Klasifikasi hasil dan retry
 
@@ -212,6 +231,8 @@ spec:
       type: http
       method: POST
       url: "${ALURJET_FLOW_TARGET_URL}/orders"
+      headers:                       # opsional
+        Authorization: "Bearer ${ALURJET_FLOW_TARGET_TOKEN}"
       timeout: 5s
   retry:
     maxAttempts: 3
@@ -219,8 +240,9 @@ spec:
 ```
 
 - Flow berisi 1–10 step, tepat satu `http` di posisi terakhir, dan ID step unik. Step sebelumnya hanya `validate` atau `transform`. Setiap attempt menjalankan flow dari payload snapshot awal.
-- Mapping hanya menerima `$.field` atau `$.object.field`. Data hasil `transform` diteruskan ke step berikutnya. Pertahankan token angka JSON dari ingest, penyimpanan, dan pemetaan sampai serialisasi outbound. Di Go, gunakan nilai seperti `json.RawMessage` atau `json.Number` dan hindari konversi angka ke `float64`.
-- Resolve placeholder dengan prefix `ALURJET_FLOW_` saat create/update. Placeholder yang tidak didukung atau bernilai kosong membuat konfigurasi ditolak.
+- Mapping hanya menerima `$.field` atau `$.object.field`. Step `transform` memiliki maksimum 64 field. Data hasil `transform` diteruskan ke step berikutnya. Pertahankan token angka JSON dari ingest, penyimpanan, dan pemetaan sampai serialisasi outbound. Di Go, gunakan nilai seperti `json.RawMessage` atau `json.Number` dan hindari konversi angka ke `float64`.
+- **URL:** resolve placeholder dengan prefix `ALURJET_FLOW_` saat create/update dan simpan hasilnya di definisi terkompilasi. Placeholder yang tidak didukung atau bernilai kosong membuat konfigurasi ditolak.
+- **Header target** ([ADR-003](docs/ai/decisions.md)): saat create/update, validasi bahwa setiap placeholder berawalan `ALURJET_FLOW_` dan variabelnya nonkosong, tetapi simpan template, bukan nilainya. Worker meresolusi nilai dari environment saat dispatch. Secret tidak masuk DB, snapshot, atau response API. Variabel hilang atau kosong saat dispatch menghasilkan kegagalan permanen `HEADER_RESOLVE_FAILED`, sehingga API dan worker harus memakai environment yang sama. Batas: maksimum 10 header, nama berupa token HTTP valid, nilai tanpa CR/LF. Header terlarang: `Host`, `Content-Length`, `Content-Type`, `Transfer-Encoding`, `Connection`, `Idempotency-Key`, `Proxy-*`. Konektor selalu mengirim `Content-Type: application/json`.
 - Terapkan batas ukuran body dan kebijakan outbound di §8.
 
 Spesifikasi detail: [docs/guides/flow-configuration.md](docs/guides/flow-configuration.md).
@@ -242,6 +264,8 @@ Spesifikasi detail: [docs/guides/flow-configuration.md](docs/guides/flow-configu
 
 Management API memakai `Authorization: Bearer <ALURJET_ADMIN_API_KEY>`. Webhook memakai header `X-Webhook-Token` dengan token khusus slug dan `X-Event-ID`. Operator memasok objek JSON `ALURJET_WEBHOOK_TOKENS_JSON` ke proses API dengan key slug dan value token. Tolak JSON invalid, slug duplikat, token kosong, token yang sama untuk beberapa slug, dan token yang sama dengan admin key. Flow dapat diimpor sebelum token tersedia. Request tanpa binding atau dengan token salah mendapat `401` generik sebelum lookup flow atau deduplikasi. Setelah token valid, flow yang belum ada tetap mengikuti `404`. Token dikelola terpisah dari YAML, snapshot, dan worker.
 
+MVP tidak menyediakan `DELETE` atau penonaktifan flow, dan slug tidak dapat diubah. `PUT` hanya memperbarui definisi untuk event baru. Execution aktif tetap memakai snapshot lama.
+
 Lihat [referensi API](docs/reference/api.md) untuk kontrak dan contoh request, serta [referensi error HTTP](docs/reference/errors.md).
 
 ## 8. Security & logging yang cukup untuk MVP
@@ -252,7 +276,8 @@ Lihat [referensi API](docs/reference/api.md) untuk kontrak dan contoh request, s
 - Gunakan resolver/dialer yang memeriksa IP saat koneksi dibuat, menolak alamat yang tidak dapat dirutekan secara publik (termasuk private, loopback, link-local, carrier-grade NAT, multicast, dan alamat khusus/reserved; normalisasi IPv4-mapped IPv6 sebelum klasifikasi), dan membuka koneksi langsung ke IP yang lolos tanpa resolusi kedua. Pertahankan hostname URL asli untuk HTTP Host dan verifikasi TLS. Tolak DNS yang mengembalikan kombinasi alamat yang diizinkan dan dilarang. Nonaktifkan redirect dan penggunaan proxy dari environment pada client outbound.
 - Profil Compose demo boleh mengizinkan origin HTTP dan IP privat hanya untuk satu origin yang tercantum pada `ALURJET_DEV_PRIVATE_ORIGIN` **dan** allowlist. Default runtime untuk pengecualian ini kosong. Loopback, link-local, alamat metadata, multicast, dan unspecified tetap ditolak. Bind port demo yang dipublikasikan ke loopback; mock receiver hanya perlu tersedia di jaringan Compose.
 - Logging JSON via `slog`: `event`, `execution_id`, `flow_slug`, `attempt`, `duration_ms`, `error_code`.
-- Jangan mencatat `Authorization`, webhook token, atau payload mentah secara default.
+- Jangan mencatat `Authorization`, webhook token, nilai header target, atau payload mentah secara default.
+- Brute-force token: MVP belum memiliki rate limit untuk autentikasi gagal. Pasang rate limit di reverse proxy dan gunakan secret acak minimal 32 karakter (diperiksa saat startup). Webhook belum memakai HMAC atau timestamp, jadi replay request oleh pihak yang memegang token tidak dicegah selain lewat dedup event ID. Rotasi admin key dan token dilakukan lewat restart proses.
 - Error response ke user memakai `code` dan `message` yang tidak mengandung credential/stack trace.
 - Integrasi ini demo self-hosted; jangan menganggapnya enterprise-ready.
 
@@ -263,10 +288,13 @@ Lihat [referensi API](docs/reference/api.md) untuk kontrak dan contoh request, s
 | Unit | YAML invalid, missing field, mapping, retry policy, error classification |
 | Controller | Auth header valid/invalid, request body error, status codes |
 | Bootstrap | Volume kosong; migrasi sukses dan no-op setelah startup ulang; kegagalan migrasi terlihat dan menahan API/worker |
-| Batas tiap transform dan body final | Tepat pada batas diteruskan; satu byte di atas batas menghasilkan dead-letter tanpa DNS. Uji field yang dipetakan berulang, UTF-8/escaping, hasil intermediate yang akan diperkecil step berikutnya, dan flow tanpa transform |
+| Batas body final | Tepat pada batas diteruskan; satu byte di atas batas menghasilkan dead-letter tanpa DNS. Uji field yang dipetakan berulang (maksimum 64 field), UTF-8/escaping, dan flow tanpa transform |
+| Header target | Header terkirim ke mock; placeholder hilang atau kosong saat dispatch menjadi `HEADER_RESOLVE_FAILED`; header terlarang ditolak saat import; nilai tidak muncul di log, DB, atau response API |
+| Parser YAML | Field tak dikenal, anchor/alias, body melebihi `ALURJET_MAX_FLOW_YAML_BYTES`, slug tidak valid, lebih dari 64 field transform |
 | Repository integration | Migration; ingest serentak dengan ID/payload sama atau berbeda; rollback bila insert attempt gagal; satu claim per execution; webhook baru dan replay dapat diambil pada polling pertama setelah commit; concurrent replay dengan key sama |
 | E2E | Webhook → transform → POST, termasuk integer `9007199254740993` dan desimal `0.123456789012345678901` yang harus keluar sebagai token angka JSON yang sama; bandingkan token atau gunakan `json.Number`, tanpa `float64`; 500 → 200; selalu 500 → dead-letter; replay memakai snapshot dan key asal meskipun flow aktif berubah |
-| Kapasitas webhook dan replay | Target offline; isi antrean dengan status aktif, ulangi event/replay yang sudah commit, lalu uji webhook dan replay concurrent pada flow yang sama. Pastikan pekerjaan terminal melepas slot |
+| Kapasitas webhook dan replay | Target offline; isi antrean dengan status aktif sampai kuota per flow, ulangi event/replay yang sudah commit, lalu uji webhook dan replay concurrent pada flow yang sama. Pastikan pekerjaan terminal melepas slot |
+| Operasi proses | `/healthz` mengembalikan `503` saat DB tidak dapat dijangkau; SIGTERM pada worker menunggu attempt aktif sampai `ALURJET_SHUTDOWN_TIMEOUT`; dua worker tidak mengklaim execution yang sama |
 | Respons target terbatas | Uji `200` dengan body besar atau lambat, respons dengan header melebihi batas, dan pelepasan slot. Worker tidak menggunakan body untuk hasil atau log |
 | Recovery M2 | Crash setelah mock menerima POST, sebelum finalisasi. Setelah lease expired, tutup attempt sekali, lalu retry dengan body dan outbound key yang sama atau dead-letter saat jatah habis. Tolak finalisasi saat lease habis sebelum recovery walau token sama; uji tepat pada batas expiry; lock wait yang melewati expiry; crash pada attempt terakhir → `dead_letter`; dua worker recovery menutup attempt lama sekali |
 | HTTP outbound | Origin ditolak, redirect tidak diikuti, DNS publik/privat campuran ditolak, IP koneksi sama dengan IP yang divalidasi, pengecualian origin mock tidak berlaku pada target lain |

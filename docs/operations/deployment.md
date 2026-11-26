@@ -13,6 +13,14 @@ Rancangan deployment lokal menjalankan API, worker, MySQL, dan mock receiver lew
 
 Tinjau migrasi dan siapkan pemulihan database sebelum mengubah schema. Periksa execution yang masih tertunda dan pastikan worker versi baru dapat memproses snapshot yang sudah tersimpan. Setelah pembaruan, periksa kesehatan API, riwayat attempt, dan satu pengiriman ke target yang diizinkan.
 
+## Backup, restore, dan pertumbuhan data
+
+MVP tidak menghapus data lama. Tabel `executions` menyimpan `payload_json` dan `flow_snapshot` sebagai teks biasa, sehingga ukurannya tumbuh seiring jumlah event dan payload dapat memuat data pribadi. Buat backup logis sebelum pembaruan dan secara berkala, misalnya `mysqldump --single-transaction --routines alurjet > alurjet.sql`, lalu uji restore pada instance terpisah. Simpan berkas backup dengan kontrol akses yang sama seperti database. Rencana retensi ada di [backlog pasca-MVP](../post-mvp.md). Skema lengkap ada di [referensi database](../reference/database.md).
+
+## Beberapa instance dan restart
+
+Beberapa API dan worker dapat berjalan bersamaan. Perubahan admin key, token webhook, atau variabel `ALURJET_FLOW_*` (termasuk secret header target) hanya berlaku setelah proses direstart. API dan worker harus menerima nilai `ALURJET_FLOW_*` yang sama.
+
 Mode `mock-api` dan pengecualian origin privat disiapkan untuk demo lokal. Lihat [pemantauan](monitoring.md) dan [keamanan operasional](security.md).
 
 [Kembali ke indeks dokumentasi](../README.md)
