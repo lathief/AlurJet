@@ -22,7 +22,11 @@ docker compose logs --tail=100 worker
 | `409 EVENT_ID_CONFLICT` | ID pernah dipakai dengan byte body berbeda | Ulangi body asli atau gunakan ID baru untuk event logis baru |
 | `422 INVALID_FLOW` | Step/field YAML tidak didukung | Lihat [konfigurasi flow](../guides/flow-configuration.md) |
 | API atau worker belum mulai setelah Compose boot | Migrasi gagal atau MySQL belum sehat | Periksa `docker compose ps -a` dan `docker compose logs migrate`. Cocokkan database, user, serta password pada server dan `.env` |
-| `OUTBOUND_PAYLOAD_TOO_LARGE` pada attempt | Output transform atau body JSON final melebihi `ALURJET_MAX_OUTBOUND_BYTES` | Ringkas field yang dipetakan. Execution `dead_letter` tanpa request ke target |
+| `OUTBOUND_PAYLOAD_TOO_LARGE` pada attempt | Body JSON final melebihi `ALURJET_MAX_OUTBOUND_BYTES` | Ringkas field yang dipetakan. Execution `dead_letter` tanpa request ke target |
+| `HEADER_RESOLVE_FAILED` pada attempt | Variabel `ALURJET_FLOW_*` untuk `headers` hilang atau kosong di environment worker | Samakan environment API dan worker, restart worker, lalu kirim event baru (validasi dan kegagalan konfigurasi bersifat permanen) |
+| `VALIDATION_FAILED` atau `MAPPING_PATH_NOT_FOUND` | Payload tidak memuat field yang dibutuhkan flow | Perbaiki data dan kirim event baru dengan `X-Event-ID` baru. Replay memakai payload yang sama sehingga hasilnya tetap gagal |
+| `/healthz` mengembalikan `503` | Database tidak dapat dijangkau | Periksa MySQL dan kredensial `ALURJET_MYSQL_*` |
+| `429 FLOW_CAPACITY_EXCEEDED` | Execution aktif flow mencapai `ALURJET_MAX_ACTIVE_PER_FLOW` | Periksa target yang lambat atau offline. Ulangi request yang sama setelah `Retry-After` |
 | Webhook `202` tapi status terus `pending` | Worker mati atau koneksi MySQL gagal | `docker compose ps` dan log worker |
 | Status `retry_scheduled` | Target timeout, 408, 429, 5xx, atau lease attempt habis | Cek target API, URL, DNS, dan log dengan `execution_id` |
 | Status `dead_letter` | Validation error atau retry habis | Periksa riwayat attempt. Replay setelah target pulih, atau kirim event baru jika perlu memperbaiki data/flow |

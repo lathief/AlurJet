@@ -6,7 +6,7 @@ AlurJet menerima webhook, memvalidasi dan memetakan JSON, lalu mengirim hasilnya
 
 ## Mulai menggunakan AlurJet
 
-1. [Instalasi dan persyaratan](getting-started/installation.md) untuk menyiapkan lingkungan lokal.
+1. [Instalasi dan persyaratan](getting-started/installation.md) untuk menyiapkan lingkungan lokal. Pengembang juga membaca [panduan pengembangan](getting-started/development.md).
 2. [Autentikasi](guides/authentication.md) untuk memilih kredensial sesuai endpoint.
 3. [Panduan cepat](getting-started/quickstart.md) untuk mengimpor flow, mengirim event, dan melihat hasilnya.
 
@@ -20,6 +20,7 @@ AlurJet menerima webhook, memvalidasi dan memetakan JSON, lalu mengirim hasilnya
 ## Referensi
 
 - [API HTTP](reference/api.md)
+- [Skema database](reference/database.md)
 - [Konfigurasi lingkungan](reference/configuration.md)
 - [Error HTTP dan retry](reference/errors.md)
 
@@ -51,5 +52,7 @@ AlurJet menerima webhook, memvalidasi dan memetakan JSON, lalu mengirim hasilnya
 | DSL, payload, atau snapshot | [Konfigurasi flow](guides/flow-configuration.md), [webhook](guides/sending-webhooks.md), dan [contoh integrasi](examples/order-webhook.md) |
 | Retry, replay, atau recovery | [Pelacakan execution](guides/tracking-executions.md), [pemantauan](operations/monitoring.md), dan [pemecahan masalah](operations/troubleshooting.md) |
 | Variabel lingkungan atau deployment | [Konfigurasi lingkungan](reference/configuration.md), [deployment](operations/deployment.md), dan [keamanan](operations/security.md) |
+| Skema tabel atau query antrean | [Skema database](reference/database.md) dan migrasi |
+| Keputusan yang memengaruhi kontrak | [Catatan keputusan (ADR)](ai/decisions.md) |
 
 Lihat [roadmap](../ROADMAP.md) untuk kriteria penerimaan dan [AGENTS.md](../AGENTS.md) untuk panduan implementasi. Sebelum rilis, jalankan Panduan Cepat dari lingkungan bersih dan periksa contoh sukses, retry, dead-letter, serta replay.

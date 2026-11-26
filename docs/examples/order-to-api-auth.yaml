@@ -1,0 +1,27 @@
+apiVersion: alurjet/v1
+kind: Flow
+metadata:
+  name: Order to API (with auth header)
+  slug: order-to-api-auth
+spec:
+  trigger:
+    type: webhook
+  steps:
+    - id: validate
+      type: validate
+      required: [order_id, total]
+    - id: mapping
+      type: transform
+      fields:
+        orderNumber: "$.order_id"
+        amount: "$.total"
+    - id: forward
+      type: http
+      method: POST
+      url: "${ALURJET_FLOW_TARGET_URL}/orders"
+      headers:
+        Authorization: "Bearer ${ALURJET_FLOW_TARGET_TOKEN}"
+      timeout: 5s
+  retry:
+    maxAttempts: 3
+    initialDelay: 2s
