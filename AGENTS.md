@@ -15,7 +15,7 @@ AlurJet v0.1.0 adalah backend integrasi dengan Go, Fiber, dan antrean MySQL. Sta
 
 ## Toolchain
 
-Go 1.23+, Fiber v2, MySQL 8.4 LTS, golang-migrate v4, `gopkg.in/yaml.v3`, `database/sql` dengan `go-sql-driver/mysql`, `log/slog`, dan golangci-lint ([ADR-005](docs/ai/decisions.md)). Jangan menambah dependency tanpa alasan tertulis di [catatan keputusan](docs/ai/decisions.md). Perintah harian ada di [panduan pengembangan](docs/getting-started/development.md).
+Module path `github.com/lathief/AlurJet` (kapitalisasi mengikuti nama repository). Go 1.23+, Fiber v2, MySQL 8.4 LTS, golang-migrate v4, `gopkg.in/yaml.v3`, `database/sql` dengan `go-sql-driver/mysql`, `log/slog`, dan golangci-lint ([ADR-005](docs/ai/decisions.md)). Jangan menambah dependency tanpa alasan tertulis di [catatan keputusan](docs/ai/decisions.md). Perintah harian ada di [panduan pengembangan](docs/getting-started/development.md).
 
 ## Konvensi koding
 

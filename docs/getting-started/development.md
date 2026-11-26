@@ -57,6 +57,6 @@ Aturan lengkap ada di [AGENTS.md](../../AGENTS.md). Ringkasnya:
 
 - **Graceful shutdown:** SIGTERM menghentikan polling baru, menunggu attempt aktif sampai `ALURJET_SHUTDOWN_TIMEOUT`, lalu keluar. Attempt yang tidak selesai dipulihkan oleh recovery lease.
 - **Multi-instance:** beberapa API dan worker aman dijalankan bersamaan karena claim memakai `SKIP LOCKED`. Admin key, token webhook, dan variabel `ALURJET_FLOW_*` dibaca saat startup, jadi perubahan memerlukan restart. API dan worker harus menerima nilai `ALURJET_FLOW_*` yang sama.
-- **Health:** `GET /healthz` memeriksa database. Worker memakai berkas heartbeat untuk healthcheck Compose.
+- **Health:** `GET /healthz` memeriksa database. Worker tidak memiliki healthcheck pada MVP. Periksa `docker compose logs worker` dan execution yang tertahan di `pending`.
 
 [Kembali ke indeks dokumentasi](../README.md)

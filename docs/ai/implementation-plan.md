@@ -28,7 +28,7 @@ Status yang valid: `Direncanakan`, `Dikerjakan`, `Selesai`, `Diblokir`. Ubah men
 ## ALJ-01 — Fondasi Go, konfigurasi, dan `/healthz`
 
 - **Prasyarat:** ALJ-00, Go 1.23+.
-- **Cakupan:** modul Go, `cmd/alurjet` dengan subcommand `api` dan `worker`, `internal/config` dengan validasi startup (nilai positif, `0 < attempt_timeout < lease`, secret minimal 32 karakter, token unik, admin key berbeda dari token webhook), `slog` JSON, Fiber v2 dengan error envelope, `GET /healthz` yang memeriksa DB, manual DI, dan graceful shutdown. Tambahkan `Makefile` dan `.golangci.yml`.
+- **Cakupan:** modul Go `github.com/lathief/AlurJet` (Go 1.23.1 terpasang di mesin pengembangan), `cmd/alurjet` dengan subcommand `api` dan `worker`, `internal/config` dengan validasi startup (nilai positif, `0 < attempt_timeout < lease`, secret minimal 32 karakter, token unik, admin key berbeda dari token webhook), `slog` JSON, Fiber v2 dengan error envelope, `GET /healthz` yang memeriksa DB, manual DI, dan graceful shutdown. Tambahkan `Makefile` dan `.golangci.yml`.
 - **Selesai ketika:** `gofmt`, `golangci-lint`, dan `go test ./...` lulus. Konfigurasi tidak valid keluar nonnol tanpa mencetak nilai rahasia. Ada satu contoh unit test usecase.
 - **Tugas terpisah:** migrasi, Compose, import flow, ingest, dan worker.
 
@@ -60,19 +60,19 @@ Status yang valid: `Direncanakan`, `Dikerjakan`, `Selesai`, `Diblokir`. Ubah men
 
 - **Prasyarat:** ALJ-03.
 - **Cakupan:** validasi origin, dialer yang memeriksa IP dengan daftar CIDR eksplisit, penolakan redirect dan proxy, batas header respons, body ditutup tanpa dibaca, resolusi `headers` saat dispatch, `Idempotency-Key`, klasifikasi hasil, dan pemeriksaan body final sebelum DNS.
-- **Selesai ketika:** tes dengan resolver dan dialer terkontrol lulus untuk origin ditolak, redirect, DNS campuran, IP koneksi sama dengan IP tervalidasi, pengecualian dev terbatas pada satu origin, header terkirim dan tidak tercatat di log, serta batas byte tepat dan lebih satu byte.
+- **Selesai ketika:** tes dengan resolver dan dialer terkontrol lulus untuk origin ditolak, redirect, alamat terlarang dari DNS (termasuk jawaban campuran) tidak pernah dihubungi, IP koneksi sama dengan IP tervalidasi, pengecualian dev terbatas pada satu origin, header terkirim dan tidak tercatat di log, serta batas byte tepat dan lebih satu byte.
 
 ## ALJ-07 — Worker: claim, finalisasi, dan retry
 
 - **Prasyarat:** ALJ-05 dan ALJ-06.
 - **Cakupan:** polling dengan `ALURJET_WORKER_CONCURRENCY`, claim `SKIP LOCKED`, attempt dalam transaksi yang sama, `ProcessExecution`, finalisasi dengan guard status, token, dan expiry, klasifikasi sukses, retryable, dan permanen, serta backoff.
-- **Selesai ketika:** setelah `202`, execution diklaim pada polling berikutnya. Claim ganda dan finalisasi setelah expiry (termasuk `lease_until == db_now`) ditolak. Claim yang gagal di tengah tidak menaikkan `attempts`. `500` dari mock `fail_once` menghasilkan `retry_scheduled` dengan `available_at` masa depan lalu sukses dengan key yang sama. `400` dari fixture khusus tes menjadi `dead_letter`. Body di atas batas menjadi `dead_letter` tanpa koneksi.
+- **Selesai ketika:** setelah `202`, execution diklaim pada polling berikutnya. Dua worker tidak mengklaim execution yang sama, dan finalisasi setelah lease kedaluwarsa ditolak dengan `ErrLostLease`. Rollback claim dan batas expiry tepat (`lease_until == db_now`) diuji di M3 ([ADR-006](decisions.md)). `500` dari mock `fail_once` menghasilkan `retry_scheduled` dengan `available_at` masa depan lalu sukses dengan key yang sama. `400` dari fixture khusus tes menjadi `dead_letter`. Body di atas batas menjadi `dead_letter` tanpa koneksi.
 
 ## ALJ-08 — Recovery lease dan gate M2
 
 - **Prasyarat:** ALJ-07.
-- **Cakupan:** recovery saat startup dan berkala, mode proses `api` dan `worker`, healthcheck worker, Quickstart M2, dan pembaruan roadmap sesuai bukti.
-- **Selesai ketika:** crash setelah mock menerima POST dan sebelum finalisasi menghasilkan attempt lama ditutup sekali, retry dengan body dan key yang sama, atau `dead_letter` saat jatah habis. Dua recovery serentak menutup attempt sekali. `go test ./... -race` dan tes integrasi lulus. Quickstart bagian 1–3 berjalan dari volume kosong.
+- **Cakupan:** recovery saat startup dan berkala, mode proses `api` dan `worker`, Quickstart M2, dan pembaruan roadmap sesuai bukti.
+- **Selesai ketika:** satu skenario crash setelah mock menerima POST dan sebelum finalisasi menghasilkan attempt lama ditutup sekali lalu retry dengan body dan key yang sama. Recovery pada attempt terakhir dan recovery serentak diuji di M3. `go test ./... -race` dan tes integrasi lulus. Quickstart bagian 1–3 berjalan dari volume kosong.
 - **Tugas terpisah:** verifikasi retry berulang, history endpoint, dan replay di M3 (lihat bawah).
 
 ## Setelah kartu awal

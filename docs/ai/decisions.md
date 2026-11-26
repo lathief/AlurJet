@@ -13,6 +13,7 @@ Format: **Status**, **Tanggal**, **Konteks**, **Keputusan**, **Alternatif**, **K
 | 003 | Header target lewat template dengan resolusi saat dispatch | Diterima |
 | 004 | Skema ID dan collation | Diterima |
 | 005 | Toolchain dan versi | Diterima |
+| 006 | Penyederhanaan M2 dan module path | Diterima |
 
 ## ADR-001 — Kontrak inti blueprint
 
@@ -69,3 +70,16 @@ Format: **Status**, **Tanggal**, **Konteks**, **Keputusan**, **Alternatif**, **K
 - **Keputusan:** Go 1.23+, Fiber v2, MySQL 8.4 LTS, golang-migrate v4, `yaml.v3`, golangci-lint. Tes integrasi memakai Docker Compose terpisah (`docker-compose.test.yml`), tanpa testcontainers.
 - **Alternatif:** Fiber v3 (ditolak: baru dan API masih berubah), testcontainers-go (ditolak: dependency tambahan).
 - **Konsekuensi:** Docker wajib untuk tes integrasi. Pengembangan di Windows dijelaskan di [panduan pengembangan](../getting-started/development.md).
+
+## ADR-006 — Penyederhanaan M2 dan module path
+
+- **Status:** Diterima. **Tanggal:** 2026-11-26.
+- **Konteks:** M2 memuat dialer yang mengunci IP, kuota dengan lock flow, claim dan recovery lease, serta matriks tes yang rinci. Estimasi dua minggu tidak realistis. Perlu versi yang sederhana tetapi tetap memenuhi kontrak inti.
+- **Keputusan:**
+  - Dialer memeriksa setiap alamat yang akan dihubungi lewat `net.Dialer.Control` dengan daftar CIDR eksplisit. Tidak ada penolakan terpisah untuk jawaban DNS campuran. Alamat terlarang tetap tidak pernah dihubungi.
+  - Worker tidak memiliki healthcheck Compose. API dan worker tetap menunggu `migrate`.
+  - Tes M2 dibatasi pada bukti inti: satu claim per execution, finalisasi setelah expiry ditolak, dan satu skenario crash lalu recovery. Rollback claim, batas expiry tepat, recovery serentak, dan crash pada attempt terakhir dipindah ke M3.
+  - Jadwal: M2 minggu 3–5, M3 minggu 6–7, M4 minggu 8. Estimasi ditinjau ulang setelah ALJ-02.
+  - Module path adalah `github.com/lathief/AlurJet`. Go 1.23.1 terpasang di mesin pengembangan.
+- **Alternatif:** memangkas lease atau kuota dari M2 (ditolak: keduanya kontrak inti). Menunda seluruh pemeriksaan IP (ditolak: risiko SSRF).
+- **Konsekuensi:** kebijakan jaringan sedikit lebih longgar secara formal tetapi sama amannya terhadap SSRF. Kegagalan worker terdeteksi dari log atau execution yang tertahan `pending`. Bukti konkurensi yang lebih kuat datang di M3, sehingga M2 dapat dinyatakan selesai sebelum semua race teruji. Modul memakai huruf kapital sesuai nama repository. Go mengizinkannya, tetapi semua impor internal harus memakai kapitalisasi yang sama.

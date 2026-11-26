@@ -13,6 +13,8 @@ Entri ini mencatat perubahan dokumen dan kontrak rancangan yang tersedia di fold
 - Mendokumentasikan `/healthz` yang memeriksa DB, graceful shutdown, dukungan multi-instance, rate limit dan rotasi token, serta backup dan pertumbuhan data.
 - Memecah kartu kerja agent menjadi ALJ-00 sampai ALJ-08, memisahkan Quickstart M2 dari M3, dan mengubah catatan keputusan menjadi format ADR.
 
+- Menyederhanakan M2 ([ADR-006](docs/ai/decisions.md)): tanpa penolakan DNS campuran terpisah dan tanpa healthcheck worker, tes M2 dibatasi pada bukti inti dan sisanya pindah ke M3. Jadwal menjadi M2 minggu 3–5, M3 minggu 6–7, M4 minggu 8. Module path ditetapkan `github.com/lathief/AlurJet`.
+
 ### Fondasi dan kontrak rancangan
 
 - Memperjelas antrean MySQL, transaksi claim dan attempt, pemeriksaan lease setelah lock dengan waktu MySQL, recovery pada attempt terakhir, dan klasifikasi retry HTTP termasuk `408`.

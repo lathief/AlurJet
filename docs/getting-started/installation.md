@@ -10,11 +10,9 @@
 
 ## 2. Setup
 
-Isi `ALURJET_REPOSITORY_URL` dengan URL repository saat sudah dipublikasikan.
-
 ```bash
-git clone "$ALURJET_REPOSITORY_URL" alurjet
-cd alurjet
+git clone https://github.com/lathief/AlurJet.git
+cd AlurJet
 cp .env.example .env
 ```
 
