@@ -32,6 +32,12 @@ AlurJet menerima webhook, memvalidasi dan memetakan JSON, lalu mengirim hasilnya
 - [Keamanan operasional](operations/security.md)
 - [Pertanyaan umum](faq.md)
 
+## Review dan perencanaan
+
+- [Review multi-peran](ai/review-multi-peran.md): temuan lima sudut pandang, keputusan terkini, peta rilis sampai v1.0, dan rencana 25 task. Berstatus rencana, belum diterapkan.
+- [Review portofolio](ai/review-portofolio.md): review awal untuk portofolio backend middle/senior. Disempurnakan oleh review multi-peran.
+- [Catatan wawancara](ai/interview-notes.md): kerangka pertanyaan dan jawaban yang perlu ditulis ulang dengan kata sendiri.
+
 ## Pengembangan
 
 - [Paket kerja awal](ai/implementation-plan.md), [matriks verifikasi](ai/verification.md), dan [handoff](ai/worklog.md).

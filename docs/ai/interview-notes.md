@@ -11,7 +11,7 @@
 
 Legenda bukti: **Terbukti** (sudah dijalankan dan tercatat di [worklog](worklog.md)), **Rancangan** (ada di dokumen, belum diimplementasi atau diuji).
 
-Catatan: sampai Task 1 di [review portofolio](review-portofolio.md) selesai, dokumen desain masih memakai skema v1 (`executions.id` UUID). Skema v2 (PK `BIGINT`, `public_id`, `flow_versions`) adalah keputusan yang direncanakan, belum tertulis di desain.
+Catatan: sampai Task 1 di [review multi-peran](review-multi-peran.md#rencana-25-task) selesai, dokumen desain masih memakai skema v1 (`executions.id` UUID) dan kuota ketat dengan lock row flow. Yang direncanakan adalah PK `BIGINT` dengan `public_id` UUID dan kuota lunak. Tabel `flow_versions` dibatalkan dan snapshot tetap disimpan di execution. Semua itu belum tertulis di desain.
 
 ## Pitch
 
@@ -52,6 +52,8 @@ Tulis versi Anda sendiri di sini:
 - Pengirim webhook biasanya punya timeout pendek dan tidak boleh bergantung pada kesehatan target.
 - Dengan `202` setelah commit, event sudah tahan lama (durable) sebelum kita membalas.
 - Konsekuensi: validasi bisnis berjalan di worker, jadi payload yang salah tetap mendapat `202` lalu berakhir `dead_letter`. Ini trade-off yang disengaja dan tercatat di panduan flow.
+- Pertanyaan lanjutan yang mungkin muncul: "mengapa validasi bisnis di worker?" Jawaban jujur: agar jalur ingest tetap tipis dan tidak bergantung pada logika flow. Kelemahannya, pengirim tidak mendapat umpan balik cepat dan replay tidak membantu karena payload sama.
+- Opsi yang dipertimbangkan: validasi `required` dijalankan sinkron saat ingest dan menghasilkan `422`. Validasi itu murni dan murah. **Belum diputuskan**. Siapkan alasan untuk kedua sisi.
 
 **A4. Kenapa flow linear tanpa percabangan?**
 - Setiap attempt mengulang flow dari payload awal, jadi retry mudah dan deterministik. Satu HTTP POST di akhir menjaga semantik idempotency tetap sederhana.
@@ -63,7 +65,8 @@ Tulis versi Anda sendiri di sini:
 - Claim memakai `SELECT ... FOR UPDATE SKIP LOCKED`. Baris yang sedang dikunci worker lain dilewati, bukan ditunggu.
 - Dalam satu transaksi: ubah status ke `running`, naikkan `attempts`, buat token lease baru, dan buat attempt. Commit dulu, baru kerjakan I/O.
 - Tidak ada I/O jaringan di dalam transaksi.
-- Rujukan: desain §5 "Claim, finalisasi, dan recovery". Bukti: **Rancangan** (tes dua worker di Task 11). Perilaku `SKIP LOCKED` konkuren belum diuji.
+- Query claim memakai `status IN (...) ORDER BY available_at, id`, yang kemungkinan memicu filesort pada indeks `(status, available_at, id)`. Belum diukur. Rencananya `EXPLAIN` di Task 8, dengan opsi `UNION ALL` per status.
+- Rujukan: desain §5 "Claim, finalisasi, dan recovery". Bukti: **Rancangan** (tes dua worker di Task 8). Perilaku `SKIP LOCKED` konkuren belum diuji.
 
 **B2. Apa itu lease dan fencing token? Kenapa perlu?**
 - Lease: worker "menyewa" execution sampai `lease_until`. Jika worker mati, sewa kedaluwarsa dan recovery mengambil alih.
@@ -80,27 +83,44 @@ Tulis versi Anda sendiri di sini:
 - Retry mengirim POST lagi dengan `Idempotency-Key` yang sama. Apakah efek ganda dicegah bergantung pada target yang menghormati key itu.
 - Karena itu sistem ini at-least-once, dan dokumen tidak mengklaim exactly-once.
 
-**B5. Kenapa `READ COMMITTED`?**
-- Cocok dengan pola "lock row flow, baca dedup dari data committed, lalu insert". Mengurangi gap lock dibanding `REPEATABLE READ`.
-- Siap menjelaskan urutan lock: flow lebih dulu, lalu execution. Claim dan finalisasi hanya mengunci execution, sehingga tidak ada deadlock antar dua jalur.
+**B5. Kenapa `READ COMMITTED`, dan bagaimana kuota dijaga tanpa lock row flow?**
+- Cocok dengan pola "baca dedup dari data committed, lalu insert". Mengurangi gap lock dibanding `REPEATABLE READ`.
+- Dedup dijamin unique key `(flow_id, event_id)`, jadi request serentak yang sama tidak menghasilkan dua baris walaupun tidak ada lock row flow.
+- Kuota per flow lunak: hitung execution aktif lewat probe berindeks, lalu insert. Kelebihan terbatas pada jumlah ingest serentak. Tujuannya melindungi database, bukan menjamin angka persis.
+- Trade-off yang harus bisa Anda jelaskan: kuota ketat memerlukan lock row flow dan menyerialkan ingest per flow. Kuota lunak menukar ketepatan angka dengan konkurensi.
+- Claim dan finalisasi hanya mengunci execution, sehingga tidak ada urutan lock bertingkat yang berisiko deadlock.
+- Bukti: **Rancangan** (kuota lunak belum tertulis di desain dan belum diuji).
 
 **B6. Bagaimana retry dan backoff bekerja?**
 - `initialDelay × 2^(n-1)` dengan batas 60 detik, default 3 attempt. Jitter ±20% (direncanakan) agar retry tidak serentak setelah target pulih.
 - Hanya timeout, `408`, `429`, `5xx`, dan error transport sementara yang dicoba lagi. Error validasi, redirect, TLS, dan `4xx` lain langsung `dead_letter`.
 - Bukti jitter: **Rancangan**.
 
+**B7. Replay memakai outbound key yang sama. Apakah replay pasti berefek di target?**
+- Tidak pasti. Jika target menyimpan hasil per `Idempotency-Key`, termasuk hasil gagal, request replay dapat menerima respons lama tanpa memproses ulang.
+- Alasan mempertahankan key asal: mencegah efek ganda bila attempt awal sebenarnya sudah diproses target.
+- Trade-off: aman dari efek ganda, tetapi replay bisa tidak berefek. Opsi yang dipertimbangkan adalah replay dengan key baru. **Belum diputuskan**. Tulis keputusan akhir Anda dan alasannya.
+- Bukti: **Rancangan**.
+
+**B8. Bagaimana Anda membuktikan sistem tidak kehilangan atau menggandakan pekerjaan?**
+- Tulis invarian: tidak ada execution hilang, tidak ada attempt difinalisasi dua kali, paling banyak satu attempt `running` per execution, `attempts` tidak melebihi batas.
+- Uji dengan injeksi kegagalan di bawah beban: bunuh worker acak, hentikan MySQL sebentar, ubah target antara sukses dan gagal. Periksa invarian setelah tiap skenario, dengan seed acak yang dicatat.
+- Dijadwalkan di Task 21 (v1.0). Sebelum itu, hanya tes crash tunggal di Task 10.
+- Bukti: **Rancangan**.
+
 ### C. Data dan skema
 
-**C1. Kenapa PK `BIGINT` dan `public_id` UUID terpisah? (skema v2)**
+**C1. Kenapa PK `BIGINT` dan `public_id` UUID terpisah?**
 - Awalnya PK UUID v4 `CHAR(36)`. Masalahnya: insert acak memecah halaman clustered index dan setiap indeks sekunder membawa 36 byte PK.
-- Sekarang PK `BIGINT` urut untuk performa, `public_id` UUID untuk API supaya ID tidak bisa ditebak dan tidak membocorkan jumlah data.
+- Rencananya PK `BIGINT` urut untuk performa, `public_id` UUID untuk API supaya ID tidak bisa ditebak dan tidak membocorkan jumlah data.
 - Jujur: ini keputusan yang berubah setelah review. Itu sehat, dan ADR-007 akan mencatat alasannya.
-- Bukti: **Rancangan** (DDL v1 terbukti, v2 belum).
+- Bukti: **Rancangan** (DDL v1 terbukti, skema baru belum).
 
-**C2. Kenapa ada tabel `flow_versions`?**
-- Execution tidak perlu menyalin definisi flow. Cukup menyimpan `flow_version_id`.
-- Retry dan replay memakai versi yang sama persis walaupun flow diubah kemudian.
-- Update dengan hash definisi sama tidak membuat versi baru.
+**C2. Kenapa snapshot flow disimpan di setiap execution, bukan di tabel versi terpisah?**
+- Tabel `flow_versions` sempat dipertimbangkan lalu dibatalkan demi kesederhanaan.
+- Snapshot di execution menjamin retry dan replay memakai definisi yang sama persis walaupun flow diubah kemudian, tanpa join tambahan.
+- Konsekuensi: baris `executions` lebih besar dan definisi yang sama tersimpan berulang. Dampaknya diukur di benchmark dan ditulis sebagai batasan. Jika terbukti menjadi masalah, pemisahan ke tabel versi adalah langkah evolusi yang jelas.
+- Bukti: **Rancangan**.
 
 **C3. Bagaimana deduplikasi webhook bekerja? Kenapa membandingkan hash body?**
 - Kunci dedup: `(flow_id, event_id)`. Pengirim yang mengulang request (karena respons hilang) mendapat `202` dengan execution yang sama.
@@ -137,8 +157,10 @@ Tulis versi Anda sendiri di sini:
 - Rujukan: [ADR-003](decisions.md).
 
 **D3. Apa kelemahan autentikasinya?**
-- Satu admin key dan satu token statis per flow. Belum ada rate limit untuk percobaan gagal, belum ada HMAC atau timestamp pada webhook, rotasi memerlukan restart.
-- Itu keputusan MVP yang tercatat. HMAC di backlog pasca-MVP. Siap menjelaskan cara Stripe atau GitHub menandatangani webhook.
+- Satu admin key dan satu token statis per flow di `ALURJET_WEBHOOK_TOKENS_JSON`. Belum ada rate limit untuk percobaan gagal, belum ada HMAC atau timestamp pada webhook, rotasi memerlukan restart.
+- Kontrak inbound v0.1.0 juga mengharuskan `X-Event-ID` dan `X-Webhook-Token`. Penyedia seperti Stripe dan GitHub tidak bisa mengirim header itu.
+- Itu keputusan v0.1.0 yang tercatat sebagai batasan. Dijadwalkan v0.2.0: `trigger.eventId` yang dapat dikonfigurasi (header atau JSONPath, cadangan hash body), verifikasi HMAC, dan token di database (hash, tampil sekali, ada rotasi).
+- Siap menjelaskan cara Stripe atau GitHub menandatangani webhook, dan kenapa timestamp dalam tanda tangan mencegah replay.
 
 **D4. Bagaimana token dibandingkan?**
 - Perbandingan waktu konstan (`subtle.ConstantTimeCompare`) pada token yang terikat ke slug. Token flow A tidak berlaku di flow B, dan jawaban `401` sama untuk semua sebab agar tidak membocorkan informasi.
@@ -157,10 +179,15 @@ Tulis versi Anda sendiri di sini:
 **E3. Bisakah dijalankan lebih dari satu instance?**
 - Ya untuk API dan worker, karena claim memakai `SKIP LOCKED`. Konfigurasi dibaca saat startup, jadi perubahan token memerlukan restart.
 
+**E4. Apa saja yang bisa gagal, dan bagaimana sistem bereaksi?**
+- Siapkan tabel failure mode: MySQL mati, target mati, worker crash, jam bergeser, event duplikat, payload beracun, disk penuh. Per kasus: dampak, deteksi (metrik atau log), dan pemulihan.
+- Contoh jawaban ringkas: MySQL mati membuat `/healthz` mengembalikan `503` dan ingest gagal, tetapi tidak ada data yang hilang karena `202` hanya dikirim setelah commit.
+- Dijadwalkan di `engineering-notes` (Task 22, v1.0). Bukti: **Rancangan**.
+
 ### F. Skala dan trade-off
 
 **F1. Apa batas sistem ini?**
-- Ingest pada satu flow diserialkan oleh lock row flow, jadi throughput per flow terbatas.
+- Kuota per flow lunak, jadi bisa terlampaui sebanyak jumlah ingest serentak. Sebagai gantinya ingest tidak diserialkan per flow.
 - Pool worker bersama, jadi satu flow lambat dapat menyita slot flow lain.
 - Urutan eksekusi tidak dijamin.
 - Angka nyata: **isi setelah skrip beban dijalankan** (lihat `docs/benchmarks.md`). Jangan menyebut angka sebelum diukur.
@@ -170,13 +197,13 @@ Tulis versi Anda sendiri di sini:
 - Jika kontensi MySQL tetap menjadi bottleneck: pindah ke broker dengan rencana migrasi yang menjaga dedup dan execution lama.
 
 **F3. Apa yang akan Anda ubah jika mengulang?**
-- Siapkan dua atau tiga jawaban jujur, misalnya: skema v1 dengan UUID sebagai PK (sudah diubah), menunda observabilitas terlalu lama, atau terlalu banyak dokumen sebelum ada kode.
+- Siapkan dua atau tiga jawaban jujur, misalnya: skema v1 dengan UUID sebagai PK (diubah), lock row flow untuk kuota ketat (diganti kuota lunak), menunda observabilitas terlalu lama, atau terlalu banyak dokumen sebelum ada kode.
 
 ### G. Proses dan alat bantu
 
 **G1. Seberapa besar peran AI dalam proyek ini?**
 - Jawab jujur. Repository memuat `AGENTS.md` dan `docs/ai/`, jadi penilai dapat melihat bahwa agen dipakai.
-- Yang perlu Anda tunjukkan: keputusan desain (misalnya skema v2, cakupan MVP, header target) lahir dari review dan pilihan Anda, dan Anda memverifikasi hasilnya (DDL dijalankan di MySQL, tes dijalankan, tautan diperiksa).
+- Yang perlu Anda tunjukkan: keputusan desain (misalnya skema PK `BIGINT`, kuota lunak, cakupan MVP, header target) lahir dari review dan pilihan Anda, dan Anda memverifikasi hasilnya (DDL dijalankan di MySQL, tes dijalankan, tautan diperiksa).
 - Siap menjelaskan satu keputusan yang Anda ubah setelah mempertimbangkan saran, dan satu hal yang Anda tolak.
 - Jangan mengklaim bagian yang tidak Anda pahami.
 
@@ -200,6 +227,8 @@ Tulis versi Anda sendiri di sini:
 - [ ] Saya punya angka benchmark nyata dan tahu batas sistemnya.
 - [ ] Saya bisa menunjukkan satu tes konkurensi dan satu skenario crash worker yang berjalan.
 - [ ] Saya sudah menulis ulang semua jawaban di atas dengan kata-kata sendiri.
+- [ ] Saya bisa menjelaskan invarian sistem dan cara mengujinya dengan injeksi kegagalan.
+- [ ] Saya bisa menjelaskan trade-off kuota lunak dan replay dengan key yang sama.
 - [ ] Saya punya jawaban jujur tentang peran alat bantu AI.
 
-Lihat [review portofolio](review-portofolio.md), [catatan keputusan](decisions.md), [desain sistem](../../SYSTEM_DESIGN.md), dan [verifikasi](verification.md).
+Lihat [review multi-peran](review-multi-peran.md), [review portofolio](review-portofolio.md), [catatan keputusan](decisions.md), [desain sistem](../../SYSTEM_DESIGN.md), dan [verifikasi](verification.md).

@@ -44,6 +44,16 @@ Catat satu entri per pekerjaan. Gunakan ID kartu atau issue, dan sertakan commit
 - **Risiko terbuka:** `docker-compose.yml`, `Dockerfile`, `migrations/`, `LICENSE`, `CONTRIBUTING.md`, dan `SECURITY.md` belum ada (dijadwalkan di ALJ-02 dan M4). Estimasi jadwal 6–8 minggu belum divalidasi ulang setelah pemangkasan.
 - **Tugas berikutnya:** [ALJ-01](implementation-plan.md) (fondasi Go, konfigurasi, `/healthz`). Prasyarat: Go 1.23+ terpasang.
 
+## 2026-11-26 — Catat review multi-peran dan peta rilis v1.0
+
+- **Tujuan dan status:** selesai. Mencatat hasil review multi-peran dan rencana v0.1.0 sampai v1.0, serta menyelaraskan dokumen review yang ada. Hanya perubahan Markdown. Desain, skema, API, `AGENTS.md`, `.env.example`, dan kode **tidak diubah**.
+- **Berkas:** branch `docs/perbaikan-dokumen-awal` (identik dengan `master` saat mulai, karena PR #2 sudah di-merge). Baru: `docs/ai/review-multi-peran.md`. Diubah: `docs/ai/review-portofolio.md`, `docs/ai/interview-notes.md`, `ROADMAP.md`, `docs/README.md`, `CHANGELOG.md`, dan worklog ini. Belum di-commit.
+- **Perintah yang dijalankan dan hasil:** pemeriksaan tautan relatif dan anchor dengan skrip Node sementara (sudah dihapus) pada 31 berkas `.md`: 259 tautan, 0 rusak. Pencarian `flow_versions` dan `flow_version_id`: tersisa hanya sebagai catatan pembatalan.
+- **Pemeriksaan tertunda:** tidak ada klaim baru yang terbukti. Hanya DDL v1 pada MySQL 8.4.13 yang terbukti (lihat entri ALJ-00). `EXPLAIN` query claim, perilaku `SKIP LOCKED` konkuren, kuota lunak, dan semua metrik masih **Rancangan**.
+- **Keputusan yang berubah:** `flow_versions` dibatalkan, kuota per flow lunak, terjemahan dokumen kunci ditunda ke v1.0. ADR-007 sampai ADR-010 belum ditulis di [decisions.md](decisions.md).
+- **Risiko terbuka:** `database.md`, `SYSTEM_DESIGN.md`, `api.md`, `AGENTS.md`, dan `.env.example` masih memakai skema v1 dan kuota ketat sampai Task 1. Estimasi sekitar 16 minggu belum divalidasi.
+- **Tugas berikutnya:** Task 1 pada [rencana 25 task](review-multi-peran.md#rencana-25-task): selaraskan desain dengan keputusan sederhana. Prasyarat: persetujuan pemilik proyek untuk mengubah dokumen desain.
+
 ## Format entri
 
 ```text
