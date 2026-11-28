@@ -4,6 +4,13 @@
 
 Entri ini mencatat perubahan dokumen dan kontrak rancangan yang tersedia di folder ini. Status rilis runtime menunggu implementasi dan verifikasi.
 
+### 2026-11-26 — Review multi-peran dan peta rilis sampai v1.0
+
+- Mencatat review multi-peran dan peta rilis sampai v1.0 di [review multi-peran](docs/ai/review-multi-peran.md), dengan ringkasan di [ROADMAP.md](ROADMAP.md#peta-rilis-sampai-v10).
+- Mengubah keputusan: `flow_versions` dibatalkan, kuota per flow menjadi lunak, dan terjemahan dokumen kunci ditunda ke v1.0.
+- Menyelaraskan [review portofolio](docs/ai/review-portofolio.md) dan [catatan wawancara](docs/ai/interview-notes.md) dengan keputusan tersebut.
+- Desain, skema, kontrak API, dan kode belum diubah. Penerapannya dimulai dari Task 1.
+
 ### 2026-11-26 — Penutupan celah dokumen awal
 
 - Menerapkan paket hemat ([ADR-002](docs/ai/decisions.md)): `ALURJET_ACTIVE_HIGH_WATERMARK`, `503 SYSTEM_BACKPRESSURE`, dan anggaran byte per transform ditunda ke [backlog pasca-MVP](docs/post-mvp.md). Batas ukuran kini berupa payload masuk, maksimum 64 field transform, dan body final. Entri di bawah yang menyebut ambang global atau anggaran per transform sudah digantikan.

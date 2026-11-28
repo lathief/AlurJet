@@ -17,6 +17,19 @@
 
 Estimasi ini belum divalidasi. Tinjau ulang setelah ALJ-02 selesai dengan kecepatan kerja yang nyata.
 
+## Peta rilis sampai v1.0
+
+> **Rencana, bukan status selesai.** Peta ini berasal dari [review multi-peran](docs/ai/review-multi-peran.md), yang juga memuat rencana 25 task dan alasan tiap keputusan. Milestone M0 sampai M4 di bawah adalah isi rilis v0.1.0. Perubahan desain dan skema yang diusulkan belum diterapkan.
+
+| Rilis | Tema | Kriteria selesai |
+|---|---|---|
+| v0.1.0 | Alur andal end-to-end | Webhook sampai mock, retry, dead-letter, replay, recovery crash, CI hijau, `make demo`, benchmark awal |
+| v0.2.0 | Dipakai dengan penyedia nyata | Flow GitHub atau Stripe berjalan tanpa mengubah pengirim, token dikelola lewat API |
+| v0.3.0 | Dapat dioperasikan | Dashboard, alert, SLO, kebijakan migrasi, rilis otomatis dengan image bertanda tangan |
+| v1.0.0 | Stabil dan terbukti | Kontrak `/api/v1` dibekukan, uji invarian lulus, model ancaman dan review keamanan, dokumen kunci dua bahasa |
+
+Estimasi total sekitar 16 minggu solo part-time dan belum divalidasi: Fase A 2 hari, v0.1.0 sekitar 6 minggu, v0.2 sekitar 3 minggu, v0.3 sekitar 3 minggu, v1.0 sekitar 2 minggu. Tinjau ulang di akhir Task 4, 11, dan 16. Jika waktu terbatas, v0.1.0 dan v0.2.0 sudah cukup sebagai portofolio.
+
 ## M0 — Foundation
 
 - [ ] `cmd/alurjet`, `internal/controllers`, `internal/usecases`, `internal/repositories/mysql`, `internal/domain`.
@@ -81,6 +94,8 @@ Estimasi ini belum divalidasi. Tinjau ulang setelah ALJ-02 selesai dengan kecepa
 **Done when:** orang baru bisa clone, configure, run, kirim contoh webhook, dan mengetahui statusnya tanpa bertanya ke pembuat.
 
 ## Next backlog (hanya jika MVP selesai)
+
+Item v0.2.0 sampai v1.0 ada di [peta rilis di atas](#peta-rilis-sampai-v10).
 
 Lihat [backlog setelah MVP](docs/post-mvp.md) untuk kandidat yang diurutkan menurut kebutuhan operasional, hasil ukur, dan kriteria selesai.
 
